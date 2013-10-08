@@ -457,6 +457,9 @@ etharp_send_ip(struct netif *netif, struct pbuf *p, struct eth_addr *src, const 
   return netif->linkoutput(netif, p);
 }
 
+#define ETH_F "%02"X16_F":%02"X16_F":%02"X16_F":%02"X16_F":%02"X16_F":%02"X16_F
+#define ETH_F_ARG(x) (x).addr[0], (x).addr[1], (x).addr[2], (x).addr[3], (x).addr[4], (x).addr[5]
+
 /**
  * Update (or insert) a IP/MAC address pair in the ARP cache.
  *
@@ -480,10 +483,9 @@ etharp_update_arp_entry(struct netif *netif, const ip4_addr_t *ipaddr, struct et
 {
   s8_t i;
   LWIP_ASSERT("netif->hwaddr_len == ETHARP_HWADDR_LEN", netif->hwaddr_len == ETHARP_HWADDR_LEN);
-  LWIP_DEBUGF(ETHARP_DEBUG | LWIP_DBG_TRACE, ("etharp_update_arp_entry: %"U16_F".%"U16_F".%"U16_F".%"U16_F" - %02"X16_F":%02"X16_F":%02"X16_F":%02"X16_F":%02"X16_F":%02"X16_F"\n",
+  LWIP_DEBUGF(ETHARP_DEBUG | LWIP_DBG_TRACE, ("etharp_update_arp_entry: %"U16_F".%"U16_F".%"U16_F".%"U16_F" - "ETH_F"\n",
     ip4_addr1_16(ipaddr), ip4_addr2_16(ipaddr), ip4_addr3_16(ipaddr), ip4_addr4_16(ipaddr),
-    ethaddr->addr[0], ethaddr->addr[1], ethaddr->addr[2],
-    ethaddr->addr[3], ethaddr->addr[4], ethaddr->addr[5]));
+	ETH_F_ARG(*ethaddr)));
   /* non-unicast address? */
   if (ip4_addr_isany(ipaddr) ||
       ip4_addr_isbroadcast(ipaddr, netif) ||
@@ -848,6 +850,12 @@ etharp_arp_input(struct netif *netif, struct eth_addr *ethaddr, struct pbuf *p)
       ethdst_hwaddr = ip4_addr_islinklocal(netif_ip4_addr(netif)) ? (const u8_t*)(ethbroadcast.addr) : hdr->shwaddr.addr;
 #endif /* LWIP_AUTOIP */
 
+	  LWIP_DEBUGF(ETHARP_DEBUG | LWIP_DBG_TRACE, ("etharp_arp_input: received ARP "ETH_F"->"ETH_F" ETH "ETH_F"->"ETH_F"\n",
+			ETH_F_ARG(hdr->shwaddr), ETH_F_ARG(hdr->dhwaddr),
+			ETH_F_ARG(ethhdr->src), ETH_F_ARG(ethhdr->dest)));
+	  LWIP_DEBUGF(ETHARP_DEBUG | LWIP_DBG_TRACE, ("etharp_arp_input: my ethaddr is "ETH_F"\n", ETH_F_ARG(*ethaddr)));
+
+
       ETHADDR16_COPY(&hdr->dhwaddr, &hdr->shwaddr);
 #if LWIP_AUTOIP
       ETHADDR16_COPY(&ethhdr->dest, ethdst_hwaddr);
@@ -856,6 +864,12 @@ etharp_arp_input(struct netif *netif, struct eth_addr *ethaddr, struct pbuf *p)
 #endif /* LWIP_AUTOIP */
       ETHADDR16_COPY(&hdr->shwaddr, ethaddr);
       ETHADDR16_COPY(&ethhdr->src, ethaddr);
+
+	  LWIP_DEBUGF(ETHARP_DEBUG | LWIP_DBG_TRACE, ("etharp_arp_input: sending ARP "ETH_F"->"ETH_F" ETH "ETH_F"->"ETH_F"\n",
+			ETH_F_ARG(hdr->shwaddr), ETH_F_ARG(hdr->dhwaddr),
+			ETH_F_ARG(ethhdr->src), ETH_F_ARG(ethhdr->dest)));
+
+      LWIP_DEBUGF(ETHARP_DEBUG | LWIP_DBG_TRACE, ("etharp_arp_input: replying to ARP request for our IP address\n"));
 
       /* hwtype, hwaddr_len, proto, protolen and the type in the ethernet header
          are already correct, we tested that before */
