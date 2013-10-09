@@ -433,7 +433,7 @@ sys_untimeout(sys_timeout_handler handler, void *arg)
  *
  * Must be called periodically from your main loop.
  */
-void
+u32_t
 sys_check_timeouts(void)
 {
   if (next_timeout) {
@@ -475,6 +475,7 @@ sys_check_timeouts(void)
     /* repeat until all expired timers have been called */
     } while (had_one);
   }
+  return next_timeout ? next_timeout->time : (u32)-1;
 }
 
 /** Set back the timestamp of the last call to sys_check_timeouts()
