@@ -81,7 +81,7 @@
 #endif
 
 /* Forward declarations.*/
-static void tcp_output_segment(struct tcp_seg *seg, struct tcp_pcb *pcb);
+static err_t tcp_output_segment(struct tcp_seg *seg, struct tcp_pcb *pcb);
 
 /** Allocate a pbuf and create a tcphdr at p->payload, used for output
  * functions other than the default tcp_output -> tcp_output_segment
@@ -1014,6 +1014,11 @@ tcp_output(struct tcp_pcb *pcb)
     ++i;
 #endif /* TCP_CWND_DEBUG */
 
+	{
+	err_t err = tcp_output_segment(seg, pcb);
+	if (err) return err;
+	}
+
     pcb->unsent = seg->next;
 
     if (pcb->state != SYN_SENT) {
@@ -1024,7 +1029,6 @@ tcp_output(struct tcp_pcb *pcb)
 #if TCP_OVERSIZE_DBGCHECK
     seg->oversize_left = 0;
 #endif /* TCP_OVERSIZE_DBGCHECK */
-    tcp_output_segment(seg, pcb);
     snd_nxt = ntohl(seg->tcphdr->seqno) + TCP_TCPLEN(seg);
     if (TCP_SEQ_LT(pcb->snd_nxt, snd_nxt)) {
       pcb->snd_nxt = snd_nxt;
@@ -1079,7 +1083,7 @@ tcp_output(struct tcp_pcb *pcb)
  * @param seg the tcp_seg to send
  * @param pcb the tcp_pcb for the TCP connection used to send the segment
  */
-static void
+static err_t
 tcp_output_segment(struct tcp_seg *seg, struct tcp_pcb *pcb)
 {
   u16_t len;
@@ -1147,7 +1151,7 @@ tcp_output_segment(struct tcp_seg *seg, struct tcp_pcb *pcb)
     ipX_addr_t *local_ip;
     ipX_route_get_local_ipX(PCB_ISIPV6(pcb), &pcb->local_ip, &pcb->remote_ip, netif, local_ip);
     if ((netif == NULL) || (local_ip == NULL)) {
-      return;
+      return ERR_RTE;
     }
     ipX_addr_copy(PCB_ISIPV6(pcb), pcb->local_ip, *local_ip);
   }
@@ -1210,10 +1214,10 @@ tcp_output_segment(struct tcp_seg *seg, struct tcp_pcb *pcb)
   TCP_STATS_INC(tcp.xmit);
 
 #if LWIP_NETIF_HWADDRHINT
-  ipX_output_hinted(PCB_ISIPV6(pcb), seg->p, &pcb->local_ip, &pcb->remote_ip,
+  return ipX_output_hinted(PCB_ISIPV6(pcb), seg->p, &pcb->local_ip, &pcb->remote_ip,
     pcb->ttl, pcb->tos, IP_PROTO_TCP, &pcb->addr_hint);
 #else /* LWIP_NETIF_HWADDRHINT*/
-  ipX_output(PCB_ISIPV6(pcb), seg->p, &pcb->local_ip, &pcb->remote_ip, pcb->ttl,
+  return ipX_output(PCB_ISIPV6(pcb), seg->p, &pcb->local_ip, &pcb->remote_ip, pcb->ttl,
     pcb->tos, IP_PROTO_TCP);
 #endif /* LWIP_NETIF_HWADDRHINT*/
 }
