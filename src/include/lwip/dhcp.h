@@ -203,6 +203,25 @@ void dhcp_fine_tmr(void);
 #define DHCP_STATE_BOUND        10
 /** not yet implemented #define DHCP_STATE_RELEASING 11 */
 #define DHCP_STATE_BACKING_OFF  12
+#define DHCP_STATE_MAX    12
+
+#ifdef DHCP_DEFINE_STATE_NAMES
+static const char* dhcp_state_names[] = {
+	"Off",
+	"Requesting",
+	"Init",
+	"Rebooting",
+	"Rebinding",
+	"Renewing",
+	"Selecting",
+	"Informing",
+	"Checking",
+	"Permanent (not impl)",
+	"Bound",
+	"Releasing (not impl)",
+	"Backing off"
+};
+#endif
 
 /** AUTOIP cooperation flags */
 #define DHCP_AUTOIP_COOP_STATE_OFF  0
