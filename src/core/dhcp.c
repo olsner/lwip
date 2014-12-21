@@ -70,6 +70,9 @@
 
 #if LWIP_DHCP /* don't build if not configured for use in lwipopts.h */
 
+/* Ask dhcp.h to define dhcp_state_names. */
+#define DHCP_DEFINE_STATE_NAMES
+
 #include "lwip/stats.h"
 #include "lwip/mem.h"
 #include "lwip/udp.h"
@@ -369,6 +372,7 @@ void
 dhcp_fine_tmr()
 {
   struct netif *netif = netif_list;
+  LWIP_DEBUGF(DHCP_DEBUG | LWIP_DBG_TRACE, ("dhcp_fine_tmr(): netif=%p\n", netif));
   /* loop through netif's */
   while (netif != NULL) {
     /* only act on DHCP configured interfaces */
@@ -376,15 +380,23 @@ dhcp_fine_tmr()
       /* timer is active (non zero), and is about to trigger now */      
       if (netif->dhcp->request_timeout > 1) {
         netif->dhcp->request_timeout--;
+        LWIP_DEBUGF(DHCP_DEBUG | LWIP_DBG_TRACE, ("dhcp_fine_tmr(): %d timers left\n", netif->dhcp->request_timeout));
       }
       else if (netif->dhcp->request_timeout == 1) {
         netif->dhcp->request_timeout--;
         /* { netif->dhcp->request_timeout == 0 } */
-        LWIP_DEBUGF(DHCP_DEBUG | LWIP_DBG_TRACE | LWIP_DBG_STATE, ("dhcp_fine_tmr(): request timeout\n"));
+        LWIP_DEBUGF(DHCP_DEBUG | LWIP_DBG_TRACE, ("dhcp_fine_tmr(): request timeout\n"));
         /* this client's request timeout triggered */
         dhcp_timeout(netif);
       }
+	  else {
+        LWIP_DEBUGF(DHCP_DEBUG | LWIP_DBG_TRACE | LWIP_DBG_STATE, ("dhcp_fine_tmr(): no timeout (== 0)\n"));
+	  }
     }
+	else
+	{
+        LWIP_DEBUGF(DHCP_DEBUG | LWIP_DBG_TRACE | LWIP_DBG_STATE, ("dhcp_fine_tmr(): dhcp not active\n"));
+	}
     /* proceed to next network interface */
     netif = netif->next;
   }
@@ -658,7 +670,7 @@ dhcp_start(struct netif *netif)
     }
     /* store this dhcp client in the netif */
     netif->dhcp = dhcp;
-    LWIP_DEBUGF(DHCP_DEBUG | LWIP_DBG_TRACE, ("dhcp_start(): allocated dhcp"));
+    LWIP_DEBUGF(DHCP_DEBUG | LWIP_DBG_TRACE, ("dhcp_start(): allocated dhcp\n"));
   /* already has DHCP client attached */
   } else {
     LWIP_DEBUGF(DHCP_DEBUG | LWIP_DBG_TRACE | LWIP_DBG_STATE, ("dhcp_start(): restarting DHCP configuration\n"));
@@ -1253,7 +1265,9 @@ dhcp_stop(struct netif *netif)
 static void
 dhcp_set_state(struct dhcp *dhcp, u8_t new_state)
 {
+  LWIP_ASSERT("invalid new state", new_state <= DHCP_STATE_MAX);
   if (new_state != dhcp->state) {
+    LWIP_DEBUGF(DHCP_DEBUG | LWIP_DBG_TRACE | LWIP_DBG_STATE, ("dhcp_set_state(): %d %s -> %d %s\n", dhcp->state, dhcp_state_names[dhcp->state], new_state, dhcp_state_names[new_state]));
     dhcp->state = new_state;
     dhcp->tries = 0;
     dhcp->request_timeout = 0;
