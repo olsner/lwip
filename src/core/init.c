@@ -202,6 +202,9 @@
 #if (LWIP_IGMP || LWIP_IPV6) && !defined(LWIP_RAND)
   #error "When using IGMP or IPv6, LWIP_RAND() needs to be defined to a random-function returning an u32_t random value"
 #endif
+#if ((LWIP_DNS_SECURE & LWIP_DNS_SECURE_RAND_XID) != 0) && !defined(LWIP_RAND)
+  #error "When using DNS, LWIP_RAND() needs to be defined to a random-function returning an u32_t random value"
+#endif
 #if LWIP_TCPIP_CORE_LOCKING_INPUT && !LWIP_TCPIP_CORE_LOCKING
   #error "When using LWIP_TCPIP_CORE_LOCKING_INPUT, LWIP_TCPIP_CORE_LOCKING must be enabled, too"
 #endif
