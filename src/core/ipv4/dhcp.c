@@ -64,6 +64,9 @@
 
 #if LWIP_IPV4 && LWIP_DHCP /* don't build if not configured for use in lwipopts.h */
 
+/* Ask dhcp.h to define dhcp_state_names. */
+#define DHCP_DEFINE_STATE_NAMES
+
 #include "lwip/stats.h"
 #include "lwip/mem.h"
 #include "lwip/udp.h"
@@ -745,7 +748,7 @@ dhcp_start(struct netif *netif)
 
     /* store this dhcp client in the netif */
     netif_set_client_data(netif, LWIP_NETIF_CLIENT_DATA_INDEX_DHCP, dhcp);
-    LWIP_DEBUGF(DHCP_DEBUG | LWIP_DBG_TRACE, ("dhcp_start(): allocated dhcp"));
+    LWIP_DEBUGF(DHCP_DEBUG | LWIP_DBG_TRACE, ("dhcp_start(): allocated dhcp\n"));
   /* already has DHCP client attached */
   } else {
     LWIP_DEBUGF(DHCP_DEBUG | LWIP_DBG_TRACE | LWIP_DBG_STATE, ("dhcp_start(): restarting DHCP configuration\n"));
@@ -1374,7 +1377,9 @@ dhcp_stop(struct netif *netif)
 static void
 dhcp_set_state(struct dhcp *dhcp, u8_t new_state)
 {
+  LWIP_ASSERT("invalid new state", new_state < DHCP_STATE_MAX);
   if (new_state != dhcp->state) {
+    LWIP_DEBUGF(DHCP_DEBUG | LWIP_DBG_TRACE | LWIP_DBG_STATE, ("dhcp_set_state(): %d %s -> %d %s\n", dhcp->state, dhcp_state_names[dhcp->state], new_state, dhcp_state_names[new_state]));
     dhcp->state = new_state;
     dhcp->tries = 0;
     dhcp->request_timeout = 0;
