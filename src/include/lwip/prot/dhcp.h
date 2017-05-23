@@ -109,8 +109,27 @@ typedef enum {
   DHCP_STATE_PERMANENT       = 9,  /* not yet implemented */
   DHCP_STATE_BOUND           = 10,
   DHCP_STATE_RELEASING       = 11, /* not yet implemented */
-  DHCP_STATE_BACKING_OFF     = 12
+  DHCP_STATE_BACKING_OFF     = 12,
+  DHCP_STATE_MAX             /* number of entries in state_names */
 } dhcp_state_enum_t;
+
+#ifdef DHCP_DEFINE_STATE_NAMES
+static const char* const dhcp_state_names[] = {
+	"Off",
+	"Requesting",
+	"Init",
+	"Rebooting",
+	"Rebinding",
+	"Renewing",
+	"Selecting",
+	"Informing",
+	"Checking",
+	"Permanent (not impl)",
+	"Bound",
+	"Releasing (not impl)",
+	"Backing off"
+};
+#endif
 
 /* DHCP op codes */
 #define DHCP_BOOTREQUEST            1
