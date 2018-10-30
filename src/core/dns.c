@@ -92,6 +92,7 @@
 #include "lwip/memp.h"
 #include "lwip/dns.h"
 #include "lwip/prot/dns.h"
+#include "lwip/timeouts.h"
 
 #include <string.h>
 
@@ -121,6 +122,9 @@ static u16_t dns_txid;
 #elif DNS_MAX_TTL > 0x7FFFFFFF
 #error DNS_MAX_TTL must be a positive 32-bit value
 #endif
+
+/** DNS timer period */
+#define DNS_TMR_INTERVAL          1000
 
 #if DNS_TABLE_SIZE > 255
 #error DNS_TABLE_SIZE must fit into an u8_t
@@ -286,8 +290,9 @@ static err_t dns_lookup_local(const char *hostname, ip_addr_t *addr LWIP_DNS_ADD
 
 /* forward declarations */
 static void dns_recv(void *s, struct udp_pcb *pcb, struct pbuf *p, const ip_addr_t *addr, u16_t port);
-static void dns_check_entries(void);
 static void dns_call_found(u8_t idx, ip_addr_t* addr);
+static void dns_check_entry(u8_t i);
+
 
 /*-----------------------------------------------------------------------------
  * Globals
@@ -388,17 +393,6 @@ dns_getserver(u8_t numdns)
   } else {
     return IP_ADDR_ANY;
   }
-}
-
-/**
- * The DNS resolver client timer - handle retries and timeouts and should
- * be called every DNS_TMR_INTERVAL milliseconds (every second by default).
- */
-void
-dns_tmr(void)
-{
-  LWIP_DEBUGF(DNS_DEBUG, ("dns_tmr: dns_check_entries\n"));
-  dns_check_entries();
 }
 
 #if DNS_LOCAL_HOSTLIST
@@ -998,6 +992,18 @@ again:
   return txid;
 }
 
+static void
+dns_check_timer(void *p)
+{
+  dns_check_entry((struct dns_table_entry*)p - dns_table);
+}
+
+static void
+dns_check_again(u8_t i, int intervals)
+{
+  sys_timeout(intervals * DNS_TMR_INTERVAL, dns_check_timer, &dns_table[i]);
+}
+
 /**
  * dns_check_entry() - see if entry has not yet been queried and, if so, sends out a query.
  * Check an entry in the dns_table:
@@ -1029,40 +1035,41 @@ dns_check_entry(u8_t i)
       if (err != ERR_OK) {
         LWIP_DEBUGF(DNS_DEBUG | LWIP_DBG_LEVEL_WARNING,
                     ("dns_send returned error: %s\n", lwip_strerr(err)));
+      } else {
+        dns_check_again(i, 1);
       }
       break;
     case DNS_STATE_ASKING:
-      if (--entry->tmr == 0) {
-        if (++entry->retries == DNS_MAX_RETRIES) {
-          if ((entry->server_idx + 1 < DNS_MAX_SERVERS) && !ip_addr_isany_val(dns_servers[entry->server_idx + 1])
+      if (++entry->retries == DNS_MAX_RETRIES) {
+        if ((entry->server_idx + 1 < DNS_MAX_SERVERS) && !ip_addr_isany_val(dns_servers[entry->server_idx + 1])
 #if LWIP_DNS_SUPPORT_MDNS_QUERIES
-            && !entry->is_mdns
+          && !entry->is_mdns
 #endif /* LWIP_DNS_SUPPORT_MDNS_QUERIES */
-            ) {
-            /* change of server */
-            entry->server_idx++;
-            entry->tmr = 1;
-            entry->retries = 0;
-          } else {
-            LWIP_DEBUGF(DNS_DEBUG, ("dns_check_entry: \"%s\": timeout\n", entry->name));
-            /* call specified callback function if provided */
-            dns_call_found(i, NULL);
-            /* flush this entry */
-            entry->state = DNS_STATE_UNUSED;
-            break;
-          }
+          ) {
+          /* change of server */
+          entry->server_idx++;
+          entry->tmr = 1;
+          entry->retries = 0;
         } else {
-          /* wait longer for the next retry */
-          entry->tmr = entry->retries;
+          LWIP_DEBUGF(DNS_DEBUG, ("dns_check_entry: \"%s\": timeout\n", entry->name));
+          /* call specified callback function if provided */
+          dns_call_found(i, NULL);
+          /* flush this entry */
+          entry->state = DNS_STATE_UNUSED;
+          break;
         }
-
-        /* send DNS packet for this entry */
-        err = dns_send(i);
-        if (err != ERR_OK) {
-          LWIP_DEBUGF(DNS_DEBUG | LWIP_DBG_LEVEL_WARNING,
-                      ("dns_send returned error: %s\n", lwip_strerr(err)));
-        }
+      } else {
+        /* wait longer for the next retry */
+        entry->tmr = entry->retries;
       }
+
+      /* send DNS packet for this entry */
+      err = dns_send(i);
+      if (err != ERR_OK) {
+        LWIP_DEBUGF(DNS_DEBUG | LWIP_DBG_LEVEL_WARNING,
+                    ("dns_send returned error: %s\n", lwip_strerr(err)));
+      }
+      dns_check_again(i, entry->tmr);
       break;
     case DNS_STATE_DONE:
       /* if the time to live is nul */
@@ -1078,19 +1085,6 @@ dns_check_entry(u8_t i)
     default:
       LWIP_ASSERT("unknown dns_table entry state:", 0);
       break;
-  }
-}
-
-/**
- * Call dns_check_entry for each entry in dns_table - check all entries.
- */
-static void
-dns_check_entries(void)
-{
-  u8_t i;
-
-  for (i = 0; i < DNS_TABLE_SIZE; ++i) {
-    dns_check_entry(i);
   }
 }
 

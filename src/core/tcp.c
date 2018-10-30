@@ -1202,6 +1202,9 @@ tcp_slowtmr_start:
 
 
   /* Steps through all of the TIME-WAIT PCBs. */
+  // TODO(SB): PCBs will probably be added in time order (at least if we append
+  // to the list - maybe there are updates too?), so we should only need to
+  // look at the first to see when the next one expires.
   prev = NULL;
   pcb = tcp_tw_pcbs;
   while (pcb != NULL) {

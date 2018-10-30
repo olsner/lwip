@@ -52,6 +52,8 @@
 #include "lwip/snmp.h"
 #include "lwip/dhcp.h"
 #include "lwip/autoip.h"
+#include "lwip/timeouts.h"
+#include "lwip/sys.h"
 #include "netif/ethernet.h"
 
 #include <string.h>
@@ -81,10 +83,9 @@ enum etharp_state {
   ETHARP_STATE_EMPTY = 0,
   ETHARP_STATE_PENDING,
   ETHARP_STATE_STABLE,
-  ETHARP_STATE_STABLE_REREQUESTING_1,
-  ETHARP_STATE_STABLE_REREQUESTING_2
+  ETHARP_STATE_STABLE_REREQUESTING,
 #if ETHARP_SUPPORT_STATIC_ENTRIES
-  ,ETHARP_STATE_STATIC
+  ETHARP_STATE_STATIC,
 #endif /* ETHARP_SUPPORT_STATIC_ENTRIES */
 };
 
@@ -99,6 +100,7 @@ struct etharp_entry {
   ip4_addr_t ipaddr;
   struct netif *netif;
   struct eth_addr ethaddr;
+  /** etharp_now() at creation time, or at time of rerequest. */
   u16_t ctime;
   u8_t state;
 };
@@ -189,48 +191,53 @@ etharp_free_entry(int i)
 #endif /* LWIP_DEBUG */
 }
 
-/**
- * Clears expired entries in the ARP table.
- *
- * This function should be called every ARP_TMR_INTERVAL milliseconds (1 second),
- * in order to expire entries in the ARP table.
- */
-void
-etharp_tmr(void)
+/** 1.024 second timer to age ARP entries in fewer bits. */
+static u16_t
+etharp_now(void)
 {
-  u8_t i;
+  return sys_now() >> 10;
+}
 
-  LWIP_DEBUGF(ETHARP_DEBUG, ("etharp_timer\n"));
-  /* remove expired entries from the ARP table */
-  for (i = 0; i < ARP_TABLE_SIZE; ++i) {
-    u8_t state = arp_table[i].state;
-    if (state != ETHARP_STATE_EMPTY
-#if ETHARP_SUPPORT_STATIC_ENTRIES
-      && (state != ETHARP_STATE_STATIC)
-#endif /* ETHARP_SUPPORT_STATIC_ENTRIES */
-      ) {
-      arp_table[i].ctime++;
-      if ((arp_table[i].ctime >= ARP_MAXAGE) ||
-          ((arp_table[i].state == ETHARP_STATE_PENDING)  &&
-           (arp_table[i].ctime >= ARP_MAXPENDING))) {
-        /* pending or stable entry has become old! */
-        LWIP_DEBUGF(ETHARP_DEBUG, ("etharp_timer: expired %s entry %"U16_F".\n",
-             arp_table[i].state >= ETHARP_STATE_STABLE ? "stable" : "pending", (u16_t)i));
-        /* clean up entries that have just been expired */
-        etharp_free_entry(i);
-      } else if (arp_table[i].state == ETHARP_STATE_STABLE_REREQUESTING_1) {
-        /* Don't send more than one request every 2 seconds. */
-        arp_table[i].state = ETHARP_STATE_STABLE_REREQUESTING_2;
-      } else if (arp_table[i].state == ETHARP_STATE_STABLE_REREQUESTING_2) {
-        /* Reset state to stable, so that the next transmitted packet will
-           re-send an ARP request. */
-        arp_table[i].state = ETHARP_STATE_STABLE;
-      } else if (arp_table[i].state == ETHARP_STATE_PENDING) {
-        /* still pending, resend an ARP query */
-        etharp_request(arp_table[i].netif, &arp_table[i].ipaddr);
-      }
-    }
+static int
+etharp_entry_isdead(int i)
+{
+  u16_t age = etharp_now() - arp_table[i].ctime;
+  return (age > ARP_MAXAGE ||
+      (arp_table[i].state == ETHARP_STATE_PENDING && age >= ARP_MAXPENDING));
+}
+
+static void
+etharp_tmr_rerequest(void* p)
+{
+  struct etharp_entry* entry = (struct etharp_entry*)p;
+  if (entry->state == ETHARP_STATE_STABLE_REREQUESTING) {
+    /* Reset state to stable, so that the next transmitted packet will
+       re-send an ARP request. */
+    entry->state = ETHARP_STATE_STABLE;
   }
+}
+static void
+etharp_set_rerequesting(int i)
+{
+  arp_table[i].state = ETHARP_STATE_STABLE_REREQUESTING;
+  sys_timeout(2000, etharp_tmr_rerequest, &arp_table[i]);
+}
+
+
+static void
+etharp_tmr_pending(void* p)
+{
+  struct etharp_entry* entry = (struct etharp_entry*)p;
+  if (entry->state == ETHARP_STATE_PENDING) {
+    /* still pending, resend an ARP query */
+    etharp_request(entry->netif, &entry->ipaddr);
+  }
+}
+static void
+etharp_set_pending(int i)
+{
+  arp_table[i].state = ETHARP_STATE_PENDING;
+  sys_timeout(2000, etharp_tmr_pending, &arp_table[i]);
 }
 
 /**
@@ -754,12 +761,12 @@ etharp_output_to_arp_index(struct netif *netif, struct pbuf *q, u8_t arp_idx)
     if (arp_table[arp_idx].ctime >= ARP_AGE_REREQUEST_USED_BROADCAST) {
       /* issue a standard request using broadcast */
       if (etharp_request(netif, &arp_table[arp_idx].ipaddr) == ERR_OK) {
-        arp_table[arp_idx].state = ETHARP_STATE_STABLE_REREQUESTING_1;
+        etharp_set_rerequesting(arp_idx);
       }
     } else if (arp_table[arp_idx].ctime >= ARP_AGE_REREQUEST_USED_UNICAST) {
       /* issue a unicast request (for 15 seconds) to prevent unnecessary broadcast */
       if (etharp_request_dst(netif, &arp_table[arp_idx].ipaddr, &arp_table[arp_idx].ethaddr) == ERR_OK) {
-        arp_table[arp_idx].state = ETHARP_STATE_STABLE_REREQUESTING_1;
+        etharp_set_rerequesting(arp_idx);
       }
     }
   }
@@ -958,9 +965,9 @@ etharp_query(struct netif *netif, const ip4_addr_t *ipaddr, struct pbuf *q)
   /* mark a fresh entry as pending (we just sent a request) */
   if (arp_table[i].state == ETHARP_STATE_EMPTY) {
     is_new_entry = 1;
-    arp_table[i].state = ETHARP_STATE_PENDING;
     /* record network interface for re-sending arp request in etharp_tmr */
     arp_table[i].netif = netif;
+    etharp_set_pending(i);
   }
 
   /* { i is either a STABLE or (new or existing) PENDING entry } */

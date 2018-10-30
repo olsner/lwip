@@ -78,12 +78,8 @@ const struct lwip_cyclic_timer lwip_cyclic_timers[] = {
 #if IP_REASSEMBLY
   {IP_TMR_INTERVAL, HANDLER(ip_reass_tmr)},
 #endif /* IP_REASSEMBLY */
-#if LWIP_ARP
-  {ARP_TMR_INTERVAL, HANDLER(etharp_tmr)},
-#endif /* LWIP_ARP */
 #if LWIP_DHCP
   {DHCP_COARSE_TIMER_MSECS, HANDLER(dhcp_coarse_tmr)},
-  {DHCP_FINE_TIMER_MSECS, HANDLER(dhcp_fine_tmr)},
 #endif /* LWIP_DHCP */
 #if LWIP_AUTOIP
   {AUTOIP_TMR_INTERVAL, HANDLER(autoip_tmr)},
@@ -92,9 +88,6 @@ const struct lwip_cyclic_timer lwip_cyclic_timers[] = {
   {IGMP_TMR_INTERVAL, HANDLER(igmp_tmr)},
 #endif /* LWIP_IGMP */
 #endif /* LWIP_IPV4 */
-#if LWIP_DNS
-  {DNS_TMR_INTERVAL, HANDLER(dns_tmr)},
-#endif /* LWIP_DNS */
 #if LWIP_IPV6
   {ND6_TMR_INTERVAL, HANDLER(nd6_tmr)},
 #if LWIP_IPV6_REASS
@@ -125,6 +118,9 @@ static void
 tcpip_tcp_timer(void *arg)
 {
   LWIP_UNUSED_ARG(arg);
+
+  // Aeurgh. Opening and closing a TCP socket causes a spew of 250ms timers while it's waiting for its
+  // TIME_WAIT to expire... See tcp.c comments in tcp_slowtmr.
 
   /* call TCP timer handler */
   tcp_tmr();
@@ -165,7 +161,7 @@ cyclic_timer(void *arg)
 {
   const struct lwip_cyclic_timer* cyclic = (const struct lwip_cyclic_timer*)arg;
 #if LWIP_DEBUG_TIMERNAMES
-  LWIP_DEBUGF(TIMERS_DEBUG, ("tcpip: %s()\n", cyclic->handler_name));
+  LWIP_DEBUGF(TIMERS_DEBUG, ("cyclic timer: %s()\n", cyclic->handler_name));
 #endif
   cyclic->handler();
   sys_timeout(cyclic->interval_ms, cyclic_timer, arg);

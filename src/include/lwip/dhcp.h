@@ -53,8 +53,6 @@ extern "C" {
 #define DHCP_COARSE_TIMER_SECS  60
 /** period (in milliseconds) of the application calling dhcp_coarse_tmr() */
 #define DHCP_COARSE_TIMER_MSECS (DHCP_COARSE_TIMER_SECS * 1000UL)
-/** period (in milliseconds) of the application calling dhcp_fine_tmr() */
-#define DHCP_FINE_TIMER_MSECS   500
 
 #define DHCP_BOOT_FILE_LEN      128U
 
@@ -122,8 +120,6 @@ void dhcp_arp_reply(struct netif *netif, const ip4_addr_t *addr);
 u8_t dhcp_supplied_address(const struct netif *netif);
 /* to be called every minute */
 void dhcp_coarse_tmr(void);
-/* to be called every half second */
-void dhcp_fine_tmr(void);
 
 #if LWIP_DHCP_GET_NTP_SRV
 /** This function must exist, in other to add offered NTP servers to
