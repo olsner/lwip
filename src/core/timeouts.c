@@ -188,6 +188,14 @@ sys_timeout_abs(u32_t abs_time, sys_timeout_handler handler, void *arg)
 
   timeout = (struct sys_timeo *)memp_malloc(MEMP_SYS_TIMEOUT);
   if (timeout == NULL) {
+#if LWIP_DEBUG_TIMERNAMES
+    LWIP_DEBUGF(TIMERS_DEBUG, ("sys_timeout: Out of memory. Registered timeouts:\n"));
+    for (t = next_timeout; t != NULL; t = t->next) {
+      LWIP_DEBUGF(TIMERS_DEBUG, ("sys_timeout: %s (%p)\n", t->handler_name, t->arg));
+    }
+    LWIP_DEBUGF(TIMERS_DEBUG, ("sys_timeout: trying to add %s arg=%p\n", handler_name, (void *)arg));
+#endif
+
     LWIP_ASSERT("sys_timeout: timeout != NULL, pool MEMP_SYS_TIMEOUT is empty", timeout != NULL);
     return;
   }
@@ -237,7 +245,7 @@ lwip_cyclic_timer(void *arg)
   const struct lwip_cyclic_timer *cyclic = (const struct lwip_cyclic_timer *)arg;
 
 #if LWIP_DEBUG_TIMERNAMES
-  LWIP_DEBUGF(TIMERS_DEBUG, ("tcpip: %s()\n", cyclic->handler_name));
+  LWIP_DEBUGF(TIMERS_DEBUG, ("lwip_cyclic_timer: %s()\n", cyclic->handler_name));
 #endif
   cyclic->handler();
 
@@ -265,12 +273,17 @@ lwip_cyclic_timer(void *arg)
 void sys_timeouts_init(void)
 {
   size_t i;
+  u32_t now = sys_now();
   LWIP_ASSERT("Timer pool is too small!", LWIP_ARRAYSIZE(lwip_cyclic_timers) <= LWIP_NUM_SYS_TIMEOUT_INTERNAL);
   /* tcp_tmr() at index 0 is started on demand */
   for (i = (LWIP_TCP ? 1 : 0); i < LWIP_ARRAYSIZE(lwip_cyclic_timers); i++) {
-    /* we have to cast via size_t to get rid of const warning
-      (this is OK as cyclic_timer() casts back to const* */
-    sys_timeout(lwip_cyclic_timers[i].interval_ms, lwip_cyclic_timer, LWIP_CONST_CAST(void *, &lwip_cyclic_timers[i]));
+    const struct lwip_cyclic_timer *cyclic = &lwip_cyclic_timers[i];
+    void *arg = LWIP_CONST_CAST(void *, cyclic);
+#if LWIP_DEBUG_TIMERNAMES
+    sys_timeout_abs((u32_t)(now + cyclic->interval_ms), lwip_cyclic_timer, arg, cyclic->handler_name);
+#else
+    sys_timeout_abs((u32_t)(now + cyclic->interval_ms), lwip_cyclic_timer, arg);
+#endif
   }
 }
 
