@@ -60,6 +60,7 @@
 #include "lwip/dhcp6.h"
 #include "lwip/sys.h"
 #include "lwip/pbuf.h"
+#include "netif/ppp/ppp_opts.h" // for PPP_NUM_TIMEOUTS
 
 #if LWIP_DEBUG_TIMERNAMES
 #define HANDLER(x) x, #x
@@ -264,6 +265,7 @@ lwip_cyclic_timer(void *arg)
 void sys_timeouts_init(void)
 {
   size_t i;
+  LWIP_ASSERT("Timer pool is too small!", LWIP_ARRAYSIZE(lwip_cyclic_timers) <= LWIP_NUM_SYS_TIMEOUT_INTERNAL);
   /* tcp_tmr() at index 0 is started on demand */
   for (i = (LWIP_TCP ? 1 : 0); i < LWIP_ARRAYSIZE(lwip_cyclic_timers); i++) {
     /* we have to cast via size_t to get rid of const warning
